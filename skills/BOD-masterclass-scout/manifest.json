@@ -1,0 +1,37 @@
+{
+  "name": "masterclass-scout",
+  "version": "1.0.0",
+  "description": "Scout MasterClass instructors to identify candidates for Board of Directors agent roster expansion",
+  "author": "JD",
+  "category": "productivity",
+  "triggers": [
+    "/scout-masterclass",
+    "/scout",
+    "find new agents",
+    "scout for board members",
+    "check masterclass"
+  ],
+  "dependencies": {
+    "board-of-directors": ">=1.3.0"
+  },
+  "files": {
+    "main": "SKILL.md",
+    "reference": "instructor-reference.md",
+    "template": "report-template.md",
+    "examples": "examples/"
+  },
+  "outputs": {
+    "reports": "~/.gemini/antigravity/board-of-directors/scout-reports/",
+    "log": "~/.gemini/antigravity/board-of-directors/scout-log.md"
+  },
+  "capabilities": {
+    "web_fetch": "optional",
+    "file_read": "required",
+    "file_write": "required"
+  },
+  "schedule": {
+    "enabled": true,
+    "cron": "0 9 * * 0",
+    "description": "Sundays at 9:00 AM"
+  }
+}

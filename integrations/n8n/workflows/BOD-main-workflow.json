@@ -1,0 +1,686 @@
+{
+  "name": "Board of Directors - Full Deliberation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "board-of-directors",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [0, 300],
+      "webhookId": "bod-main-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate input and set defaults\nconst input = $input.first().json.body || $input.first().json;\n\nif (!input.query || typeof input.query !== 'string') {\n  throw new Error('Missing or invalid query field');\n}\n\nconst context = input.context || {};\nconst options = {\n  agents: input.options?.agents || null,\n  delivery: input.options?.delivery || 'audio',\n  format: input.options?.format || 'standard',\n  include_full_deliberation: input.options?.include_full_deliberation ?? true\n};\n\nconst deliberation_id = `bod-${new Date().toISOString().slice(0,10)}-${Math.random().toString(36).slice(2,8)}`;\n\nreturn {\n  deliberation_id,\n  query: input.query,\n  context,\n  options,\n  start_time: Date.now()\n};"
+      },
+      "id": "validate-input",
+      "name": "Validate Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const { query, context, options } = $input.first().json;\n\n// Agent profiles with full personas\nconst AGENTS = {\n  'Warren Buffett': {\n    domain: 'Finance & Investment',\n    voice: 'Folksy Omaha wisdom, baseball metaphors, long-term thinking',\n    frameworks: ['Opportunity cost', 'Circle of competence', 'Margin of safety', 'Mr. Market'],\n    tendencies: 'Patient, values certainty, focuses on downside protection',\n    keywords: ['invest', 'capital', 'valuation', 'money', 'price', 'value', 'contract', 'deal']\n  },\n  'Peter Drucker': {\n    domain: 'Management & Consulting',\n    voice: 'Precise questioning, effectiveness over efficiency',\n    frameworks: ['What business are we in?', 'Contribution focus', 'Systematic abandonment'],\n    tendencies: 'Asks fundamental questions, skeptical of activity without results',\n    keywords: ['consulting', 'management', 'organization', 'effectiveness', 'client']\n  },\n  'Nassim Taleb': {\n    domain: 'Risk & Uncertainty',\n    voice: 'Provocative, mathematical, anti-fragile thinking',\n    frameworks: ['Optionality', 'Barbell strategy', 'Skin in the game', 'Via negativa'],\n    tendencies: 'Contrarian, risk-obsessed, values asymmetric payoffs',\n    keywords: ['risk', 'uncertainty', 'downside', 'fragile', 'option']\n  },\n  'George Marshall': {\n    domain: 'Strategy & Operations',\n    voice: 'Measured, probability-weighted, trade-off focused',\n    frameworks: ['Resource allocation', 'Scenario planning', 'Coalition building'],\n    tendencies: 'Realistic, systematic, balances competing demands',\n    keywords: ['strategy', 'operations', 'plan', 'resources', 'military', 'defense']\n  },\n  'Theodore Roosevelt': {\n    domain: 'Action & Leadership',\n    voice: 'Energetic, decisive, bias to action',\n    frameworks: ['Do what you can with what you have', 'Man in the arena', 'Strenuous life'],\n    tendencies: 'Favors action over deliberation, accepts imperfection',\n    keywords: ['action', 'do', 'start', 'execute', 'bold']\n  },\n  'Steve Jobs': {\n    domain: 'Product & Design',\n    voice: 'Intense focus on user experience, simplicity obsession',\n    frameworks: ['Start with customer experience', 'Say no to 1000 things', 'Intersection of technology and liberal arts'],\n    tendencies: 'Perfectionist, willing to cannibalize, values taste',\n    keywords: ['product', 'design', 'user', 'experience', 'simple']\n  },\n  'Reid Hoffman': {\n    domain: 'Entrepreneurship & Networks',\n    voice: 'Network thinking, permanent beta mindset',\n    frameworks: ['ABZ planning', 'Blitzscaling', 'Alliance building'],\n    tendencies: 'Values speed and learning, thinks in network effects',\n    keywords: ['startup', 'entrepreneur', 'network', 'scale', 'pivot']\n  },\n  'Clayton Christensen': {\n    domain: 'Innovation & Strategy',\n    voice: 'Thoughtful academic, jobs-to-be-done focus',\n    frameworks: ['Disruptive innovation', 'Jobs to be done', 'Innovator\\'s dilemma'],\n    tendencies: 'Sees disruption patterns, questions incumbents',\n    keywords: ['innovation', 'disrupt', 'strategy', 'competitive']\n  },\n  'Ben Horowitz': {\n    domain: 'Startup Execution',\n    voice: 'Direct, wartime mentality, hip-hop references',\n    frameworks: ['Peacetime vs wartime CEO', 'The hard thing about hard things', 'Culture as strategy'],\n    tendencies: 'Confronts brutal facts, values execution over planning',\n    keywords: ['startup', 'execute', 'hard', 'ceo', 'team', 'hire']\n  },\n  'Admiral Stavridis': {\n    domain: 'Defense & Geopolitics',\n    voice: 'Strategic clarity, interagency thinking',\n    frameworks: ['Smart power', 'Whole-of-government', 'Alliance management'],\n    tendencies: 'Long-term strategic view, values coalition building',\n    keywords: ['defense', 'military', 'government', 'security', 'dod', 'navy']\n  }\n};\n\n// Route to appropriate agents\nconst queryLower = query.toLowerCase();\nconst contextStr = JSON.stringify(context).toLowerCase();\n\nfunction scoreAgent(name, profile) {\n  let score = 0;\n  for (const kw of profile.keywords) {\n    if (queryLower.includes(kw)) score += 10;\n    if (contextStr.includes(kw)) score += 5;\n  }\n  return score;\n}\n\nlet selectedAgents;\nlet category;\nlet rationale;\n\nif (options.agents && options.agents.length === 3) {\n  selectedAgents = options.agents;\n  category = 'user_specified';\n  rationale = 'User-specified panel';\n} else {\n  // Score all agents\n  const scores = Object.entries(AGENTS).map(([name, profile]) => ({\n    name,\n    profile,\n    score: scoreAgent(name, profile)\n  })).sort((a, b) => b.score - a.score);\n  \n  // Take top 3, but ensure diversity\n  selectedAgents = [scores[0].name];\n  \n  // Ensure we have different domains\n  for (const s of scores.slice(1)) {\n    if (selectedAgents.length >= 3) break;\n    const existingDomains = selectedAgents.map(n => AGENTS[n].domain);\n    if (!existingDomains.includes(s.profile.domain) || selectedAgents.length < 3) {\n      selectedAgents.push(s.name);\n    }\n  }\n  \n  // If still need more, just take top scored\n  while (selectedAgents.length < 3) {\n    for (const s of scores) {\n      if (!selectedAgents.includes(s.name)) {\n        selectedAgents.push(s.name);\n        break;\n      }\n    }\n  }\n  \n  category = 'auto_routed';\n  rationale = `Selected based on query relevance: ${selectedAgents.map(n => AGENTS[n].domain).join(', ')}`;\n}\n\nconst profiles = selectedAgents.map(name => ({\n  name,\n  ...AGENTS[name]\n}));\n\nreturn {\n  ...$input.first().json,\n  selectedAgents,\n  profiles,\n  category,\n  rationale,\n  AGENTS\n};"
+      },
+      "id": "route-agents",
+      "name": "Route to Agents",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=## The Decision\n{{ $json.query }}\n\n## Context Provided\n{{ $json.context ? JSON.stringify($json.context, null, 2) : 'No additional context provided' }}\n\n## Your Panel\nYou will be playing THREE board advisors in sequence. For each one, provide their analysis.\n\n### Advisor 1: {{ $json.profiles[0].name }}\nDomain: {{ $json.profiles[0].domain }}\nVoice: {{ $json.profiles[0].voice }}\nFrameworks: {{ $json.profiles[0].frameworks.join(', ') }}\nTendencies: {{ $json.profiles[0].tendencies }}\n\n### Advisor 2: {{ $json.profiles[1].name }}\nDomain: {{ $json.profiles[1].domain }}\nVoice: {{ $json.profiles[1].voice }}\nFrameworks: {{ $json.profiles[1].frameworks.join(', ') }}\nTendencies: {{ $json.profiles[1].tendencies }}\n\n### Advisor 3: {{ $json.profiles[2].name }}\nDomain: {{ $json.profiles[2].domain }}\nVoice: {{ $json.profiles[2].voice }}\nFrameworks: {{ $json.profiles[2].frameworks.join(', ') }}\nTendencies: {{ $json.profiles[2].tendencies }}\n\n## Your Task\nProvide analysis from ALL THREE advisors. Each should speak in their authentic voice and apply their frameworks.\n\nOutput valid JSON in this exact format:\n```json\n{\n  \"individual_reports\": [\n    {\n      \"agent\": \"{{ $json.profiles[0].name }}\",\n      \"position\": \"[Their 1-sentence position]\",\n      \"analysis\": \"[2-3 key points in their voice]\",\n      \"recommendation\": \"[Clear recommendation]\",\n      \"confidence\": \"High|Medium|Low\",\n      \"key_assumption\": \"[What must be true]\"\n    },\n    {\n      \"agent\": \"{{ $json.profiles[1].name }}\",\n      \"position\": \"...\",\n      \"analysis\": \"...\",\n      \"recommendation\": \"...\",\n      \"confidence\": \"...\",\n      \"key_assumption\": \"...\"\n    },\n    {\n      \"agent\": \"{{ $json.profiles[2].name }}\",\n      \"position\": \"...\",\n      \"analysis\": \"...\",\n      \"recommendation\": \"...\",\n      \"confidence\": \"...\",\n      \"key_assumption\": \"...\"\n    }\n  ]\n}\n```\n\nMake them disagree where appropriate. Show genuine intellectual tension.",
+        "options": {
+          "systemMessage": "You are simulating a board of advisors. Each advisor has a distinct voice, framework, and perspective. They should genuinely engage with the decision and may disagree. Output only valid JSON."
+        }
+      },
+      "id": "generate-reports",
+      "name": "Generate Individual Reports",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "claude-sonnet-4-5-20250929",
+          "mode": "list",
+          "cachedResultName": "Claude Sonnet 4.5"
+        },
+        "options": {
+          "maxTokens": 4096
+        }
+      },
+      "id": "anthropic-model-1",
+      "name": "Anthropic Model (Reports)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.3,
+      "position": [660, 520]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nlet reports;\n\ntry {\n  // Extract JSON from the output\n  const output = input.output;\n  const jsonMatch = output.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    reports = JSON.parse(jsonMatch[0]);\n  } else {\n    throw new Error('No JSON found in output');\n  }\n} catch (e) {\n  // Fallback parsing\n  reports = { individual_reports: [] };\n}\n\nreturn {\n  ...input,\n  individual_reports: reports.individual_reports || []\n};"
+      },
+      "id": "parse-reports",
+      "name": "Parse Reports JSON",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 300]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=## The Decision\n{{ $json.query }}\n\n## Individual Advisor Reports\n{{ JSON.stringify($json.individual_reports, null, 2) }}\n\n## Your Task\nSynthesize these three reports into a combined analysis. Then simulate a brief debate where advisors challenge each other.\n\nOutput valid JSON:\n```json\n{\n  \"synthesis\": {\n    \"consensus\": [\"Point all agree on\", \"Another point\"],\n    \"tensions\": [\"Where they disagree\", \"Another disagreement\"],\n    \"trade_offs\": [\"Key trade-off identified\"],\n    \"open_questions\": [\"What would help resolve uncertainty\"]\n  },\n  \"debate\": {\n    \"exchanges\": [\n      {\n        \"from\": \"[Agent name]\",\n        \"to\": \"[Agent name]\",\n        \"challenge\": \"[Direct challenge in their voice]\",\n        \"response\": \"[Direct response in the other's voice]\"\n      },\n      {\n        \"from\": \"[Different agent]\",\n        \"to\": \"[Agent name]\",\n        \"challenge\": \"...\",\n        \"response\": \"...\"\n      }\n    ]\n  }\n}\n```\n\nMake the debate genuine - real intellectual confrontation, not polite hedging.",
+        "options": {
+          "systemMessage": "You are synthesizing board advisor reports and simulating their debate. Be direct and authentic to each voice. Output only valid JSON."
+        }
+      },
+      "id": "synthesize-debate",
+      "name": "Synthesize & Debate",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [1100, 300]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "claude-sonnet-4-5-20250929",
+          "mode": "list",
+          "cachedResultName": "Claude Sonnet 4.5"
+        },
+        "options": {
+          "maxTokens": 4096
+        }
+      },
+      "id": "anthropic-model-2",
+      "name": "Anthropic Model (Synthesis)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.3,
+      "position": [1100, 520]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nlet synthesis, debate;\n\ntry {\n  const output = input.output;\n  const jsonMatch = output.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    const parsed = JSON.parse(jsonMatch[0]);\n    synthesis = parsed.synthesis || {};\n    debate = parsed.debate || { exchanges: [] };\n  }\n} catch (e) {\n  synthesis = { consensus: [], tensions: [], trade_offs: [], open_questions: [] };\n  debate = { exchanges: [] };\n}\n\nreturn {\n  ...input,\n  synthesis,\n  debate\n};"
+      },
+      "id": "parse-synthesis",
+      "name": "Parse Synthesis JSON",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 300]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are Marcus Aurelius, Stoic philosopher and Roman Emperor (161-180 CE). You serve as the final arbiter of this board deliberation.\n\n## The Decision\n{{ $json.query }}\n\n## Context\n{{ $json.context ? JSON.stringify($json.context, null, 2) : 'No additional context' }}\n\n## What the Council Said\n\n### Individual Reports\n{{ JSON.stringify($json.individual_reports, null, 2) }}\n\n### Areas of Consensus\n{{ JSON.stringify($json.synthesis.consensus) }}\n\n### Areas of Tension\n{{ JSON.stringify($json.synthesis.tensions) }}\n\n### The Debate\n{{ JSON.stringify($json.debate.exchanges, null, 2) }}\n\n## Your Task as Arbiter\n\nRender your final judgment. Apply Stoic principles:\n- What is within their control?\n- What does virtue require?\n- What serves the common good?\n- How will this look in retrospect?\n\nOutput valid JSON:\n```json\n{\n  \"judgment\": {\n    \"acknowledgments\": \"Brief acknowledgment of each perspective's merit\",\n    \"core_tension\": \"The fundamental tension you see\",\n    \"stoic_principle\": \"The Stoic principle that guides this decision\",\n    \"verdict\": \"Your clear verdict in one sentence\",\n    \"rationale\": \"Your reasoning in 2-3 sentences\",\n    \"uncertainty\": \"What remains unknown that they should watch\",\n    \"call_to_action\": [\n      \"Specific first step\",\n      \"Specific second step\",\n      \"Specific third step\"\n    ]\n  }\n}\n```\n\nSpeak with calm authority. Be direct but not harsh. Reference the deeper question if one was identified in the context.",
+        "options": {
+          "systemMessage": "You are Marcus Aurelius rendering final judgment on a board deliberation. Speak in your authentic voice - measured, philosophical, but practical. Output only valid JSON."
+        }
+      },
+      "id": "marcus-judgment",
+      "name": "Marcus Aurelius Judgment",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [1540, 300]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "claude-sonnet-4-5-20250929",
+          "mode": "list",
+          "cachedResultName": "Claude Sonnet 4.5"
+        },
+        "options": {
+          "maxTokens": 2048
+        }
+      },
+      "id": "anthropic-model-3",
+      "name": "Anthropic Model (Judgment)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.3,
+      "position": [1540, 520]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nlet judgment;\n\ntry {\n  const output = input.output;\n  const jsonMatch = output.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    const parsed = JSON.parse(jsonMatch[0]);\n    judgment = parsed.judgment || parsed;\n  }\n} catch (e) {\n  judgment = {\n    verdict: 'Unable to parse judgment',\n    rationale: 'Please review the raw output',\n    call_to_action: ['Review the deliberation manually']\n  };\n}\n\nreturn {\n  ...input,\n  judgment\n};"
+      },
+      "id": "parse-judgment",
+      "name": "Parse Judgment JSON",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1760, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst { judgment, individual_reports, query, context, profiles } = input;\nconst format = input.options?.format || 'standard';\n\nlet script = '';\n\nif (format === 'short') {\n  // 60-second version\n  script = `The council has spoken.\n\nMy verdict: ${judgment.verdict}\n\n${judgment.rationale}\n\nYour next step: ${judgment.call_to_action[0]}\n\nNow act.`;\n  \n} else if (format === 'standard') {\n  // 2-3 minute version\n  const agentSummaries = individual_reports.map(r => \n    `${r.agent} argued: ${r.position}`\n  ).join('\\n\\n');\n  \n  script = `I've heard the council deliberate on your question.\n\n${agentSummaries}\n\n${judgment.core_tension ? `The core tension: ${judgment.core_tension}` : ''}\n\nMy judgment: ${judgment.verdict}\n\nHere's why: ${judgment.rationale}\n\n${judgment.uncertainty ? `What remains uncertain: ${judgment.uncertainty}` : ''}\n\nYour next steps:\n${judgment.call_to_action.map((a, i) => `${i + 1}. ${a}`).join('\\n')}\n\nThe decision is yours. But if you ask what wisdom counsels—this is it.`;\n  \n} else {\n  // Full 4-5 minute version\n  const agentDetails = individual_reports.map(r => \n    `${r.agent}, bringing ${profiles.find(p => p.name === r.agent)?.domain || 'expertise'}, argued: ${r.position}. ${r.analysis}`\n  ).join('\\n\\n');\n  \n  const deeperQuestion = context?.subtext?.deeper_question;\n  const fear = context?.subtext?.fear;\n  \n  script = `The council convened to address this question: ${query}\n\n${deeperQuestion ? `But the deeper question you're wrestling with is: ${deeperQuestion}\\n` : ''}\n\nI heard from three advisors:\n\n${agentDetails}\n\n${judgment.acknowledgments ? `${judgment.acknowledgments}` : ''}\n\n${judgment.core_tension ? `The fundamental tension: ${judgment.core_tension}` : ''}\n\n${judgment.stoic_principle ? `The principle that guides us: ${judgment.stoic_principle}` : ''}\n\nMy verdict: ${judgment.verdict}\n\n${judgment.rationale}\n\n${judgment.uncertainty ? `What I don't know: ${judgment.uncertainty}` : ''}\n\nHere are your next steps:\n${judgment.call_to_action.map((a, i) => `${i + 1}. ${a}`).join('\\n')}\n\n${fear ? `I note your fear: ${fear}. Do not let fear choose for you.` : ''}\n\nThe decision is yours. But if you ask what wisdom counsels—this is it.\n\nNow act.`;\n}\n\n// Clean up the script\nscript = script.replace(/\\n{3,}/g, '\\n\\n').trim();\n\nreturn {\n  ...input,\n  speech_script: script,\n  character_count: script.length,\n  estimated_duration_seconds: Math.round(script.length / 14) // ~14 chars per second for speech\n};"
+      },
+      "id": "create-speech-script",
+      "name": "Create Speech Script",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1980, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "delivery-check",
+              "leftValue": "={{ $json.options.delivery }}",
+              "rightValue": "text",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ]
+        }
+      },
+      "id": "check-audio-needed",
+      "name": "Audio Needed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2200, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.elevenlabs.io/v1/text-to-speech/pNInz6obpgDQGcFmaJgB",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xi-api-key",
+              "value": "={{ $env.ELEVEN_LABS_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"text\": {{ JSON.stringify($json.speech_script) }},\n  \"model_id\": \"eleven_monolingual_v1\",\n  \"voice_settings\": {\n    \"stability\": 0.75,\n    \"similarity_boost\": 0.70,\n    \"style\": 0.35,\n    \"use_speaker_boost\": true\n  }\n}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "eleven-labs-tts",
+      "name": "11Labs Text-to-Speech",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2420, 200]
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "name": "=briefings/{{ $('Validate Input').item.json.deliberation_id }}.mp3",
+        "driveId": {
+          "__rl": true,
+          "value": "My Drive",
+          "mode": "list",
+          "cachedResultName": "My Drive",
+          "cachedResultUrl": "https://drive.google.com"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "root",
+          "mode": "list",
+          "cachedResultName": "/ (Root folder)",
+          "cachedResultUrl": "https://drive.google.com"
+        },
+        "binaryPropertyName": "data"
+      },
+      "id": "upload-audio",
+      "name": "Upload to Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [2640, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst mainData = items.find(i => i.json.deliberation_id)?.json || items[0].json;\nconst audioData = items.find(i => i.json.id && i.json.webViewLink)?.json;\n\nreturn {\n  ...mainData,\n  audio_url: audioData?.webViewLink || null,\n  audio_id: audioData?.id || null\n};"
+      },
+      "id": "merge-audio",
+      "name": "Merge Audio Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2860, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "video-check",
+              "leftValue": "={{ $json.options.delivery }}",
+              "rightValue": "video",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        }
+      },
+      "id": "check-video-needed",
+      "name": "Video Needed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [3080, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.heygen.com/v2/video/generate",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "={{ $env.HEYGEN_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"video_inputs\": [{\n    \"character\": {\n      \"type\": \"avatar\",\n      \"avatar_id\": \"{{ $env.HEYGEN_AVATAR_ID || 'josh_lite3_20230714' }}\",\n      \"avatar_style\": \"normal\"\n    },\n    \"voice\": {\n      \"type\": \"text\",\n      \"input_text\": {{ JSON.stringify($json.speech_script) }},\n      \"voice_id\": \"{{ $env.HEYGEN_VOICE_ID || '1bd001e7e50f421d891986aad5158bc8' }}\"\n    },\n    \"background\": {\n      \"type\": \"color\",\n      \"value\": \"#1a1a2e\"\n    }\n  }],\n  \"dimension\": {\n    \"width\": 1280,\n    \"height\": 720\n  }\n}",
+        "options": {}
+      },
+      "id": "heygen-generate",
+      "name": "HeyGen Generate Video",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3300, 200]
+    },
+    {
+      "parameters": {
+        "amount": 30,
+        "unit": "seconds"
+      },
+      "id": "wait-for-video",
+      "name": "Wait for Processing",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [3520, 200]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.heygen.com/v1/video_status.get?video_id={{ $json.data.video_id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "={{ $env.HEYGEN_API_KEY }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "heygen-poll-status",
+      "name": "Poll HeyGen Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3740, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\n\n// Get data from the workflow context\nconst mainData = $('Merge Audio Data').first().json;\nconst videoData = input.data?.video_url ? input : null;\n\nconst processing_time_ms = Date.now() - mainData.start_time;\n\nreturn {\n  success: true,\n  deliberation_id: mainData.deliberation_id,\n  query: mainData.query,\n  \n  panel: {\n    agents: mainData.profiles.map(p => p.name),\n    category: mainData.category,\n    rationale: mainData.rationale\n  },\n  \n  phases: mainData.options.include_full_deliberation ? {\n    individual_reports: mainData.individual_reports,\n    synthesis: mainData.synthesis,\n    debate: mainData.debate,\n    judgment: mainData.judgment\n  } : {\n    judgment: mainData.judgment\n  },\n  \n  delivery: {\n    type: mainData.options.delivery,\n    audio_url: mainData.audio_url || null,\n    video_url: videoData?.data?.video_url || null,\n    transcript: mainData.speech_script,\n    duration_seconds: mainData.estimated_duration_seconds\n  },\n  \n  metadata: {\n    generated_at: new Date().toISOString(),\n    processing_time_ms,\n    format: mainData.options.format\n  }\n};"
+      },
+      "id": "format-response",
+      "name": "Format Final Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3960, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "respond-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [4180, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Text-only path - skip audio generation\nconst input = $input.first().json;\n\nreturn {\n  ...input,\n  audio_url: null,\n  audio_id: null\n};"
+      },
+      "id": "text-only-path",
+      "name": "Text Only Path",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2420, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Skip video - pass through\nconst input = $input.first().json;\n\nreturn input;"
+      },
+      "id": "skip-video",
+      "name": "Skip Video",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3300, 400]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Input": {
+      "main": [
+        [
+          {
+            "node": "Route to Agents",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route to Agents": {
+      "main": [
+        [
+          {
+            "node": "Generate Individual Reports",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Individual Reports": {
+      "main": [
+        [
+          {
+            "node": "Parse Reports JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anthropic Model (Reports)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Generate Individual Reports",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Reports JSON": {
+      "main": [
+        [
+          {
+            "node": "Synthesize & Debate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Synthesize & Debate": {
+      "main": [
+        [
+          {
+            "node": "Parse Synthesis JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anthropic Model (Synthesis)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Synthesize & Debate",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Synthesis JSON": {
+      "main": [
+        [
+          {
+            "node": "Marcus Aurelius Judgment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Marcus Aurelius Judgment": {
+      "main": [
+        [
+          {
+            "node": "Parse Judgment JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anthropic Model (Judgment)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Marcus Aurelius Judgment",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Judgment JSON": {
+      "main": [
+        [
+          {
+            "node": "Create Speech Script",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Speech Script": {
+      "main": [
+        [
+          {
+            "node": "Audio Needed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Audio Needed?": {
+      "main": [
+        [
+          {
+            "node": "11Labs Text-to-Speech",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Text Only Path",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "11Labs Text-to-Speech": {
+      "main": [
+        [
+          {
+            "node": "Upload to Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload to Drive": {
+      "main": [
+        [
+          {
+            "node": "Merge Audio Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Text Only Path": {
+      "main": [
+        [
+          {
+            "node": "Merge Audio Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Audio Data": {
+      "main": [
+        [
+          {
+            "node": "Video Needed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Video Needed?": {
+      "main": [
+        [
+          {
+            "node": "HeyGen Generate Video",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Skip Video",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HeyGen Generate Video": {
+      "main": [
+        [
+          {
+            "node": "Wait for Processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for Processing": {
+      "main": [
+        [
+          {
+            "node": "Poll HeyGen Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Poll HeyGen Status": {
+      "main": [
+        [
+          {
+            "node": "Format Final Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Skip Video": {
+      "main": [
+        [
+          {
+            "node": "Format Final Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Final Response": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "pinData": {}
+}

@@ -1,0 +1,143 @@
+{
+  "name": "Board of Directors - Quick Consult",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "board-quick-consult",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-qc",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [0, 300],
+      "webhookId": "bod-quick-consult"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json.body || $input.first().json;\n\nif (!input.query) {\n  throw new Error('Missing query field');\n}\n\nconst AGENTS = {\n  'Warren Buffett': {\n    domain: 'Finance',\n    voice: 'Folksy Omaha wisdom, long-term thinking, baseball metaphors',\n    frameworks: ['Opportunity cost', 'Circle of competence', 'Margin of safety']\n  },\n  'Peter Drucker': {\n    domain: 'Management',\n    voice: 'Precise questioning, effectiveness over efficiency',\n    frameworks: ['What business are we in?', 'Contribution focus', 'Systematic abandonment']\n  },\n  'Nassim Taleb': {\n    domain: 'Risk',\n    voice: 'Provocative, contrarian, anti-fragile thinking',\n    frameworks: ['Optionality', 'Barbell strategy', 'Skin in the game']\n  },\n  'Theodore Roosevelt': {\n    domain: 'Action',\n    voice: 'Energetic, decisive, bias to action',\n    frameworks: ['Do what you can', 'Man in the arena', 'Strenuous life']\n  },\n  'Steve Jobs': {\n    domain: 'Product',\n    voice: 'Intense focus on user experience, simplicity obsession',\n    frameworks: ['Start with customer', 'Say no to 1000 things', 'Taste']\n  },\n  'Reid Hoffman': {\n    domain: 'Entrepreneurship',\n    voice: 'Network thinking, permanent beta mindset',\n    frameworks: ['ABZ planning', 'Blitzscaling', 'Alliance building']\n  },\n  'George Marshall': {\n    domain: 'Strategy',\n    voice: 'Measured, probability-weighted, trade-off focused',\n    frameworks: ['Resource allocation', 'Scenario planning', 'Coalition building']\n  },\n  'Ben Horowitz': {\n    domain: 'Execution',\n    voice: 'Direct, wartime mentality, confronts brutal facts',\n    frameworks: ['Peacetime vs wartime CEO', 'Hard things', 'Culture as strategy']\n  }\n};\n\nconst agentName = input.agent;\nif (!AGENTS[agentName]) {\n  throw new Error(`Unknown agent: ${agentName}. Available: ${Object.keys(AGENTS).join(', ')}`);\n}\n\nreturn {\n  query: input.query,\n  agent: agentName,\n  profile: AGENTS[agentName],\n  consult_id: `qc-${Date.now()}`\n};"
+      },
+      "id": "validate-qc",
+      "name": "Validate & Load Agent",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are {{ $json.agent }}, an expert in {{ $json.profile.domain }}.\n\nYour voice: {{ $json.profile.voice }}\nYour frameworks: {{ $json.profile.frameworks.join(', ') }}\n\n## The Question\n{{ $json.query }}\n\n## Your Task\nProvide a direct, helpful response in your authentic voice. Apply your frameworks where relevant.\n\nKeep it concise but substantive - 2-4 paragraphs. End with a clear recommendation or insight.\n\nDo not preface with \"As [your name]...\" - just speak naturally in your voice.",
+        "options": {
+          "systemMessage": "You are a board advisor providing a quick consultation. Be direct, authentic to your character's voice, and actionable."
+        }
+      },
+      "id": "agent-response",
+      "name": "Agent Response",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "claude-sonnet-4-5-20250929",
+          "mode": "list",
+          "cachedResultName": "Claude Sonnet 4.5"
+        },
+        "options": {
+          "maxTokens": 1024
+        }
+      },
+      "id": "anthropic-qc",
+      "name": "Anthropic Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.3,
+      "position": [440, 520]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\n\nreturn {\n  success: true,\n  consult_id: input.consult_id,\n  agent: input.agent,\n  domain: input.profile.domain,\n  query: input.query,\n  response: input.output,\n  generated_at: new Date().toISOString()\n};"
+      },
+      "id": "format-qc-response",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "respond-qc",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [880, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate & Load Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate & Load Agent": {
+      "main": [
+        [
+          {
+            "node": "Agent Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent Response": {
+      "main": [
+        [
+          {
+            "node": "Format Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anthropic Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Agent Response",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Response": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
