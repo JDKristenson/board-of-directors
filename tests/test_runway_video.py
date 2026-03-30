@@ -10,17 +10,17 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 sys_path_fix = str(Path(__file__).resolve().parent.parent / "scripts")
-import sys
+import sys  # noqa: E402
 
 sys.path.insert(0, sys_path_fix)
 
-from runway_video import (
+from runway_video import (  # noqa: E402
     MAX_SCRIPT_CHARS,
     MAX_SCRIPT_WORDS,
-    build_script,
-    load_verdict,
-    create_session,
     _cap_script,
+    build_script,
+    create_session,
+    load_verdict,
 )
 
 
@@ -170,13 +170,15 @@ class TestCreateSession:
 
     def test_raises_without_api_secret(self) -> None:
         mock_runway_module = MagicMock()
-        with patch.dict("sys.modules", {"runwayml": mock_runway_module}):
-            with patch.dict(os.environ, {}, clear=True):
-                os.environ.pop("RUNWAYML_API_SECRET", None)
-                with pytest.raises(RuntimeError, match="RUNWAYML_API_SECRET not set"):
-                    create_session("avatar_123", "script", api_secret=None)
+        with patch.dict("sys.modules", {"runwayml": mock_runway_module}), patch.dict(
+            os.environ, {}, clear=True
+        ):
+            os.environ.pop("RUNWAYML_API_SECRET", None)
+            with pytest.raises(RuntimeError, match="RUNWAYML_API_SECRET not set"):
+                create_session("avatar_123", "script", api_secret=None)
 
     def test_raises_on_missing_sdk(self) -> None:
-        with patch.dict("sys.modules", {"runwayml": None}):
-            with pytest.raises(ImportError, match="runwayml SDK not installed"):
-                create_session("avatar_123", "script", api_secret="key_test")
+        with patch.dict("sys.modules", {"runwayml": None}), pytest.raises(
+            ImportError, match="runwayml SDK not installed"
+        ):
+            create_session("avatar_123", "script", api_secret="key_test")

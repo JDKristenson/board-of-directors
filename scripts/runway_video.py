@@ -18,8 +18,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any, Optional
-
+from typing import Any
 
 SCRIPT_TEMPLATE = """\
 Three of history's greatest minds just debated: {question_short}.
@@ -115,7 +114,7 @@ def _cap_script(script: str) -> str:
 def create_session(
     avatar_id: str,
     script: str,
-    api_secret: Optional[str] = None,
+    api_secret: str | None = None,
 ) -> dict[str, Any]:
     """Create a Runway Characters real-time session.
 
